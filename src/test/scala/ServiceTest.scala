@@ -17,13 +17,9 @@ class ServiceTest extends AnyFlatSpec with Matchers with MockFactory {
   }
 
   "Service" should "add users and get list of users" in new mocks {
-    val newUser1 = new User(1, false, "User1")
-    val newUser2 = new User(2, false, "User2")
-    val newUser3 = new User(3, false, "User3")
-
-    service.addUser(1)
-    service.addUser(2)
-    service.addUser(3)
+    service.addUser(1, "User1")
+    service.addUser(2, "User2")
+    service.addUser(3, "User3")
 
     val usersListCorrect: String = "1\n2\n3"
 
@@ -31,11 +27,8 @@ class ServiceTest extends AnyFlatSpec with Matchers with MockFactory {
   }
 
   "Service" should "send messages and get unread" in new mocks {
-    val newUser1 = new User(1, false, "User1")
-    val newUser2 = new User(2, false, "User2")
-
-    service.addUser(1)
-    service.addUser(2)
+    service.addUser(1, "User1")
+    service.addUser(2, "User2")
 
     service.sendMessage(1, "hello")
     service.sendMessage(1, "))")
@@ -57,7 +50,8 @@ class ServiceTest extends AnyFlatSpec with Matchers with MockFactory {
     (sttpBackend.send[Response] _).expects(*).returning(Future.successful(
       com.softwaremill.sttp.Response.ok(Response(List(Data("cat"))))))
 
-    val result: String = Await.result(service.getRandomCat(), Duration.Inf)
+    service.addUser(1, "User1")
+    val result: String = Await.result(service.getRandomCat(1), Duration.Inf)
 
     result shouldBe "cat"
   }

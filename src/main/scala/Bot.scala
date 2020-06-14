@@ -20,7 +20,7 @@ class Bot(override val client: RequestHandler[Future], val service: Service) ext
       case None => reply("error").void
       case Some(user) => {
         val id = user.id
-        service.addUser(id).flatMap(_ => reply(s"you are registered\nyour id is ${id}")).void
+        service.addUser(id, user.firstName).flatMap(_ => reply(s"you are registered\nyour id is ${id}")).void
       }
     }
   }
@@ -51,7 +51,39 @@ class Bot(override val client: RequestHandler[Future], val service: Service) ext
   }
 
   onCommand("/cat") { implicit msg =>
-    service.getRandomCat.flatMap(link => reply(link)).void
+    msg.from match {
+      case None => reply("error").void
+      case Some(user) => {
+        val id = user.id
+        service.getRandomCat(id).flatMap(link => reply(link)).void
+      }
+    }
+  }
+
+  onCommand("/stats") { implicit msg =>
+    withArgs { args =>
+      if (args.isEmpty) {
+        msg.from match {
+          case None => reply("error").void
+          case Some(user) => {
+            val id = user.id
+            service.getStatistics(id).map(_.mkString("\n")).flatMap(str => reply(s"cats you saw today:\n${str}")).void
+          }
+        }
+      }
+      else if (args.size == 1) {
+        val anotherUser = args(0).toString
+        if (anotherUser forall Character.isDigit) {
+          val id = args(0).toInt
+          service.getStatistics(id).map(_.mkString("\n")).flatMap(str => reply(s"cats seen by ${id} today:\n${str}")).void
+        }
+        for {
+          idFromLogin <- service.getId(anotherUser)
+          ans <- service.getStatistics(idFromLogin).map(_.mkString("\n"))
+        } yield reply(s"cats seen by ${anotherUser} today:\n${ans}").void
+      }
+      else reply("error").void
+    }
   }
 }
 
@@ -63,7 +95,7 @@ object Bot {
     )
 
     val token = ""
-    implicit val db: Database = Database.forConfig("h2mem1")
+    val db: Database = Database.forConfig("h2mem1")
     val service = new Service(db)
     Await.result(service.init(), Duration.Inf)
     val bot = new Bot(new FutureSttpClient(token), service)
