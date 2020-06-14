@@ -1,41 +1,54 @@
 import com.softwaremill.sttp._
 import com.softwaremill.sttp.json4s.asJson
-import scala.collection.mutable.SortedSet
-import scala.collection.mutable.Map
-import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.{ExecutionContext, Future}
+import slick.jdbc.H2Profile.api._
 
 case class Response(data: List[Data])
 case class Data(link: String)
 
-class Service(implicit val backend: SttpBackend[Future, Nothing], implicit val ec: ExecutionContext) {
+class Users(tag: Tag) extends Table[Int](tag, "USERS") {
+  def id = column[Int]("ID", O.PrimaryKey)
+  def * = (id)
+}
+
+class Messages(tag: Tag) extends Table[(Int, String)](tag, "MESSAGES") {
+  def idTo = column[Int]("ID_TO")
+  def message = column[String]("MSG")
+  def * = (idTo, message)
+}
+
+class Service(val db: Database)(implicit val backend: SttpBackend[Future, Nothing], implicit val ec: ExecutionContext) {
   private implicit val serialization = org.json4s.native.Serialization
 
-  val users: SortedSet[Int] = SortedSet[Int]()
-  val messages: Map[Int, ArrayBuffer[String]] = Map[Int, ArrayBuffer[String]]()
+  val users = TableQuery[Users]
+  val messages = TableQuery[Messages]
 
-  def addUser(id: Int) {
-    users += id
+  def init(): Future[Unit] = for {
+      _ <- db.run(users.schema.createIfNotExists)
+      _ <- db.run(messages.schema.createIfNotExists)
+    } yield ()
+
+  def addUser(id: Int): Future[Int] = {
+    db.run(users.insertOrUpdate(id))
   }
 
-  def getUsers(): String = {
-    users.mkString("\n")
+  def getUsers(): Future[Seq[Int]] = {
+    db.run(users.result)
   }
 
-  def sendMessage(id: Int, message: String) {
-    if (!messages.contains(id)) {
-      messages(id) = ArrayBuffer()
-    }
-    messages(id) += message
+  def sendMessage(id: Int, message: String): Future[Unit] = {
+    val query = for {
+      _ <- messages += (id, message)
+    } yield ()
+    db.run(query)
   }
 
-  def getMessages(id: Int): String = {
-    if (!messages.contains(id)) {
-      messages(id) = ArrayBuffer()
-    }
-    val result = messages(id).mkString("\n")
-    messages(id).clear()
-    result
+  def getMessages(id: Int): Future[Seq[String]] = {
+    val query = for {
+      all <- messages.filter(_.idTo === id).map(_.message).result
+      _ <- messages.filter(_.idTo === id).delete
+    } yield all
+    db.run(query)
   }
 
   def getRandomCat(): Future[String] = {
@@ -49,4 +62,3 @@ class Service(implicit val backend: SttpBackend[Future, Nothing], implicit val e
     }
   }
 }
-

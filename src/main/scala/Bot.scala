@@ -9,6 +9,7 @@ import cats.syntax.functor._
 import com.softwaremill.sttp._
 import com.bot4s.telegram.future.Polling
 import com.bot4s.telegram.api.declarative.Commands
+import slick.jdbc.H2Profile.api._
 
 class Bot(override val client: RequestHandler[Future], val service: Service) extends TelegramBot
   with Polling
@@ -19,14 +20,13 @@ class Bot(override val client: RequestHandler[Future], val service: Service) ext
       case None => reply("error").void
       case Some(user) => {
         val id = user.id
-        service.addUser(id)
-        reply(s"you are registered\nyour id is ${id}").void
+        service.addUser(id).flatMap(_ => reply(s"you are registered\nyour id is ${id}")).void
       }
     }
   }
 
   onCommand("/users") { implicit msg =>
-    reply(s"users:\n${service.getUsers()}").void
+    service.getUsers().map(_.mkString("\n")).flatMap(str => reply(s"users:\n${str}")).void
   }
 
   onCommand("/send") { implicit msg =>
@@ -35,8 +35,7 @@ class Bot(override val client: RequestHandler[Future], val service: Service) ext
       else {
         val id = args(0).toInt
         val message = args(1).toString
-        service.sendMessage(id, message)
-        reply("ok").void
+        service.sendMessage(id, message).flatMap(_ => reply("ok")).void
       }
     }
   }
@@ -46,7 +45,7 @@ class Bot(override val client: RequestHandler[Future], val service: Service) ext
       case None => reply("error").void
       case Some(user) => {
         val id = user.id
-        reply(s"unread messages:\n${service.getMessages(id)}").void
+        service.getMessages(id).map(_.mkString("\n")).flatMap(str => reply(s"unread messages:\n${str}")).void
       }
     }
   }
@@ -64,7 +63,9 @@ object Bot {
     )
 
     val token = ""
-    val service = new Service()
+    implicit val db: Database = Database.forConfig("h2mem1")
+    val service = new Service(db)
+    Await.result(service.init(), Duration.Inf)
     val bot = new Bot(new FutureSttpClient(token), service)
     Await.result(bot.run(), Duration.Inf)
   }

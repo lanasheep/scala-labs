@@ -3,69 +3,54 @@ import org.scalamock.scalatest.MockFactory
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import com.bot4s.telegram.models.User
-import scala.collection.mutable.{ArrayBuffer, SortedSet}
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future}
+import slick.jdbc.H2Profile.api._
 
 class ServiceTest extends AnyFlatSpec with Matchers with MockFactory {
   trait mocks {
     implicit val ec = ExecutionContext.global
     implicit val sttpBackend = mock[SttpBackend[Future, Nothing]]
-
-    val service = new Service()
+    implicit val db: Database = Database.forConfig("h2mem1")
+    val service = new Service(db)
+    Await.result(service.init(), Duration.Inf)
   }
 
-  "Service" should "add users" in new mocks {
-    val newUser1 = new User(123, false, "Alice")
-    val newUser2 = new User(321, false, "Bob")
+  "Service" should "add users and get list of users" in new mocks {
+    val newUser1 = new User(1, false, "User1")
+    val newUser2 = new User(2, false, "User2")
+    val newUser3 = new User(3, false, "User3")
 
-    service.addUser(123)
-    service.addUser(321)
+    service.addUser(1)
+    service.addUser(2)
+    service.addUser(3)
 
-    val usersCorrect: SortedSet[Int] = SortedSet(123, 321)
+    val usersListCorrect: String = "1\n2\n3"
 
-    service.users shouldBe usersCorrect
+    Await.result(service.getUsers().map(_.mkString("\n")), Duration.Inf) shouldBe usersListCorrect
   }
 
-  "Service" should "get list of users" in new mocks {
-    val newUser1 = new User(123, false, "A")
-    val newUser2 = new User(321, false, "B")
-    val newUser3 = new User(789, false, "c")
+  "Service" should "send messages and get unread" in new mocks {
+    val newUser1 = new User(1, false, "User1")
+    val newUser2 = new User(2, false, "User2")
 
-    service.addUser(123)
-    service.addUser(321)
-    service.addUser(789)
+    service.addUser(1)
+    service.addUser(2)
 
-    val usersListCorrect: String = "123\n321\n789"
+    service.sendMessage(1, "hello")
+    service.sendMessage(1, "))")
 
-    service.getUsers() shouldBe usersListCorrect
-  }
+    service.sendMessage(2, "bye")
+    service.sendMessage(2, "((")
 
-  "Service" should "send messages" in new mocks {
-    val newUser = new User(123, false, "Alice")
+    val messagesToUser1Correct: String = "hello\n))"
+    val messagesToUser2Correct: String = "bye\n(("
+    val empty: String = ""
 
-    service.addUser(123)
-
-    service.sendMessage(123, "hello")
-    service.sendMessage(123, "))")
-
-    val messagesCorrect: ArrayBuffer[String] = ArrayBuffer("hello", "))")
-
-    service.messages(123) shouldBe messagesCorrect
-  }
-
-  "Service" should "get unread messages" in new mocks {
-    val newUser = new User(123, false, "Alice")
-
-    service.addUser(123)
-
-    service.sendMessage(123, "hello")
-    service.sendMessage(123, "))")
-
-    val messagesListCorrect: String = "hello\n))"
-
-    service.getMessages(123) shouldBe messagesListCorrect
-    service.getMessages(123).isEmpty shouldBe true
+    Await.result(service.getMessages(1).map(_.mkString("\n")), Duration.Inf) shouldBe messagesToUser1Correct
+    Await.result(service.getMessages(1).map(_.mkString("\n")), Duration.Inf) shouldBe empty
+    Await.result(service.getMessages(2).map(_.mkString("\n")), Duration.Inf) shouldBe messagesToUser2Correct
+    Await.result(service.getMessages(2).map(_.mkString("\n")), Duration.Inf) shouldBe empty
   }
 
   "ServiceRest" should "get cat image" in new mocks {
